@@ -182,7 +182,7 @@ public class GradleResolver implements Resolver {
                 classifier,
                 gradleCoordinates.getVersion(),
                 dependency.getVersionRevision());
-        addDependency(graph, coordinates, dependency, conflicts, requestedDeps);
+        addDependency(graph, coordinates, dependency, conflicts, requestedDeps, new HashSet<>());
         // if there's a conflict and the conflicting version isn't one that's actually requested
         // then it's an actual conflict we want to report
         if (dependency.isConflict() && !isRequestedDep(requestedDeps, dependency)) {
@@ -243,7 +243,13 @@ public class GradleResolver implements Resolver {
       Coordinates parent,
       GradleResolvedDependency parentInfo,
       Set<Conflict> conflicts,
-      List<GradleDependency> requestedDeps) {
+      List<GradleDependency> requestedDeps,
+      Set<Coordinates> visited) {
+    // Prevent infinite recursion by checking if we've already visited this node
+    if (visited.contains(parent)) {
+      return;
+    }
+    visited.add(parent);
     graph.addNode(parent);
 
     if (parentInfo.getChildren() != null) {
@@ -295,7 +301,7 @@ public class GradleResolver implements Resolver {
             conflicts.add(new Conflict(child, requested));
           }
           addDependency(
-              graph, child, childInfo, conflicts, requestedDeps); // recursively traverse the graph
+              graph, child, childInfo, conflicts, requestedDeps, visited); // recursively traverse the graph
         }
       }
     }
