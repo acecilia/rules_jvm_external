@@ -47,7 +47,19 @@ public class ResolverConfig {
 
   public ResolverConfig(EventListener listener, String... args) throws IOException {
     Path configPath = null;
-    this.netrc = Netrc.fromUserHome();
+    
+    // Check for COURSIER_CREDENTIALS environment variable first
+    String coursierCredentials = System.getenv("COURSIER_CREDENTIALS");
+    Netrc loadedNetrc = null;
+    if (coursierCredentials != null && !coursierCredentials.isEmpty()) {
+      Path netrcPath = Paths.get(coursierCredentials);
+      if (Files.exists(netrcPath)) {
+        loadedNetrc = Netrc.fromStream(Files.newInputStream(netrcPath));
+      } else {
+        throw new IllegalArgumentException("Env variable COURSIER_CREDENTIALS contains a non-existing path");
+      }
+    }
+    this.netrc = (loadedNetrc != null) ? loadedNetrc : Netrc.fromUserHome();
 
     ResolutionRequest request = new ResolutionRequest();
     String chosenResolver = "maven";

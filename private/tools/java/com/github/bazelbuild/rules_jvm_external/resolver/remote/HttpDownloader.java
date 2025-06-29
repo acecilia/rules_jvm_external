@@ -50,10 +50,12 @@ public class HttpDownloader {
   private static final Logger LOG = Logger.getLogger(HttpDownloader.class.getName());
   private final HttpClient client;
   private final EventListener listener;
+  private final Netrc netrc;
   private final Set<String> authenticationFailed = Collections.synchronizedSet(new HashSet<>());
 
   public HttpDownloader(Netrc netrc, EventListener listener) {
     this.listener = listener;
+    this.netrc = netrc;
 
     HttpClient.Builder builder =
         HttpClient.newBuilder()
@@ -82,7 +84,8 @@ public class HttpDownloader {
             return new PasswordAuthentication(userName, credential.password().toCharArray());
           }
         };
-    builder = builder.authenticator(authenticator);
+    // Authenticator is somehow messing with the bearer authentication we need for GCS - so as a short term workaround: comment it out 
+    // builder = builder.authenticator(authenticator);
     this.client = builder.build();
   }
 
@@ -93,6 +96,11 @@ public class HttpDownloader {
         return path;
       }
       return null;
+    }
+
+    // Convert GCS URIs to HTTPS for HTTP client
+    if ("gcs".equals(uriToGet.getScheme())) {
+      uriToGet = convertGcsUriToHttps(uriToGet);
     }
 
     HttpRequest request = startPreparingRequest(uriToGet).GET().build();
@@ -118,6 +126,11 @@ public class HttpDownloader {
       return Files.exists(path);
     }
 
+    // Convert GCS URIs to HTTPS for HTTP client
+    if ("gcs".equals(uri.getScheme())) {
+      uri = convertGcsUriToHttps(uri);
+    }
+
     HttpRequest request =
         startPreparingRequest(uri).method("HEAD", HttpRequest.BodyPublishers.noBody()).build();
 
@@ -127,10 +140,20 @@ public class HttpDownloader {
   }
 
   private HttpRequest.Builder startPreparingRequest(URI uri) {
-    return HttpRequest.newBuilder()
+    HttpRequest.Builder builder = HttpRequest.newBuilder()
         .uri(uri)
-        .header("User-Agent", "rules_jvm_external resolver")
+        .header("User-Agent", "rules_jvm_external_resolver")
         .timeout(Duration.ofMinutes(10));
+    
+    // Add Bearer token authentication for storage.googleapis.com using netrc credentials
+    if ("storage.googleapis.com".equals(uri.getHost())) {
+      Netrc.Credential credential = netrc.getCredential("storage.googleapis.com");
+      if (credential != null) {
+        builder.header("Authorization", "Bearer " + credential.password());
+      }
+    }
+    
+    return builder;
   }
 
   private <X> HttpResponse<X> makeRequest(
@@ -221,5 +244,12 @@ public class HttpDownloader {
 
   private boolean isSuccessful(HttpResponse<?> response) {
     return response.statusCode() > 199 && response.statusCode() < 300;
+  }
+
+  /**
+   * Converts a GCS URI (gcs://bucket/path) to an HTTPS URI (https://storage.googleapis.com/bucket/path)
+   */
+  private URI convertGcsUriToHttps(URI gcsUri) {
+    return URI.create(gcsUri.toString().replace("gcs://", "https://storage.googleapis.com/"));
   }
 }
