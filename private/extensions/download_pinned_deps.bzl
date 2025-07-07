@@ -1,4 +1,5 @@
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+load("@rules_gcs//gcs:repo_rules.bzl", "gcs_file")
 load("//private:coursier_utilities.bzl", "to_repository_name")
 load("//private/lib:urls.bzl", "get_m2local_url")
 
@@ -35,12 +36,24 @@ def download_pinned_deps(mctx, artifacts, http_files, has_m2local):
         seen_repo_names.append(http_file_repository_name)
         http_files.append(http_file_repository_name)
 
-        http_file(
-            name = http_file_repository_name,
-            sha256 = artifact["sha256"],
-            urls = urls,
-            # https://github.com/bazelbuild/rules_jvm_external/issues/1028
-            downloaded_file_path = "v1/%s" % artifact["file"] if artifact["file"] else artifact["file"],
-        )
+        # gcs_file does not support multiple urls, so just use the first
+        if urls[0].startswith("gcs://"):
+            # Use gcs_file for GCS URLs (handles authentication via credential helper)
+            gcs_file(
+                name = http_file_repository_name,
+                sha256 = artifact["sha256"],
+                url = urls[0].replace("gcs://", "gs://"),
+                # https://github.com/bazelbuild/rules_jvm_external/issues/1028
+                downloaded_file_path = "v1/%s" % artifact["file"] if artifact["file"] else artifact["file"],
+            )
+        else:
+            # Use http_file for non-GCS URLs
+            http_file(
+                name = http_file_repository_name,
+                sha256 = artifact["sha256"],
+                urls = urls,
+                # https://github.com/bazelbuild/rules_jvm_external/issues/1028
+                downloaded_file_path = "v1/%s" % artifact["file"] if artifact["file"] else artifact["file"],
+            )
 
     return seen_repo_names

@@ -9,14 +9,29 @@ repositories {
         url "{{url}}"
         allowInsecureProtocol = {{allowInsecureProtocol}}
         {{#if requiresAuth}}
-        credentials {
-            def u = findProperty("{{usernameProperty}}")
-            if (u == null) throw new GradleException("Missing {{usernameProperty}}")
-            username = u
+        def authUrl = "{{url}}"
+        if (authUrl.contains("storage.googleapis.com")) {
+            // GCS repository using Bearer token authentication
+            authentication {
+                header(HttpHeaderAuthentication)
+            }
+            credentials(HttpHeaderCredentials) {
+                def token = findProperty("{{passwordProperty}}")
+                if (token == null) throw new GradleException("Missing {{passwordProperty}}")
+                name = "Authorization"
+                value = "Bearer " + token
+            }
+        } else {
+            // Standard username/password authentication
+            credentials {
+                def u = findProperty("{{usernameProperty}}")
+                if (u == null) throw new GradleException("Missing {{usernameProperty}}")
+                username = u
 
-            def p = findProperty("{{passwordProperty}}")
-            if (p == null) throw new GradleException("Missing {{passwordProperty}}")
-            password = p
+                def p = findProperty("{{passwordProperty}}")
+                if (p == null) throw new GradleException("Missing {{passwordProperty}}")
+                password = p
+            }
         }
         {{/if}}
     }

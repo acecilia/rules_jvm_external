@@ -181,7 +181,8 @@ public class GradleResolver implements Resolver {
                 gradleCoordinates.getArtifactId(),
                 extension,
                 classifier,
-                gradleCoordinates.getVersion());
+                gradleCoordinates.getVersion(),
+                dependency.getVersionRevision());
         addDependency(graph, coordinates, dependency, conflicts, requestedDeps, visited);
         // if there's a conflict and the conflicting version isn't one that's actually requested
         // then it's an actual conflict we want to report
@@ -275,7 +276,8 @@ public class GradleResolver implements Resolver {
                   childCoordinates.getArtifactId(),
                   extension,
                   childCoordinates.getClassifier(),
-                  childCoordinates.getVersion());
+                  childCoordinates.getVersion(),
+                  childInfo.getVersionRevision());
           graph.addNode(child);
           graph.putEdge(parent, child);
           // if there's a conflict and the conflicting version isn't one that's actually requested
@@ -315,12 +317,35 @@ public class GradleResolver implements Resolver {
   }
 
   private Repository createRepository(URI uri) {
+    // Handle GCS URIs
+    if ("gcs".equals(uri.getScheme())) {
+      return createGcsRepository(uri);
+    }
+    
     Netrc.Credential credential = netrc.getCredential(uri.getHost());
     if (credential == null) {
       return new Repository(uri);
     }
 
     return new Repository(uri, true, credential.login(), credential.password());
+  }
+  
+  private Repository createGcsRepository(URI gcsUri) {
+    // Convert gcs:// to https://storage.googleapis.com/
+    URI httpsUri = convertGcsUriToHttps(gcsUri);
+    
+    // Check if we have netrc credentials for storage.googleapis.com
+    Netrc.Credential credential = netrc.getCredential("storage.googleapis.com");
+    if (credential != null) {
+      return new Repository(httpsUri, true, credential.login(), credential.password());
+    }
+    
+    // Fall back to no authentication (for public buckets)
+    return new Repository(httpsUri);
+  }
+  
+  private URI convertGcsUriToHttps(URI gcsUri) {
+    return URI.create(gcsUri.toString().replace("gcs://", "https://storage.googleapis.com/"));
   }
 
   private GradleDependencyImpl createDependency(Artifact artifact) {
