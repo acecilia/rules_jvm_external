@@ -9,7 +9,6 @@ build_test(
     targets = [
         "@regression_testing_coursier//:build_buf_protovalidate",
         "@regression_testing_coursier//:ch_epfl_scala_compiler_interface",
-        "@regression_testing_coursier//:com_fasterxml_jackson_jackson_bom",
         "@regression_testing_coursier//:com_github_fommil_netlib_all",
         "@regression_testing_coursier//:com_github_jnr_jffi_native",
         "@regression_testing_coursier//:com_google_protobuf_protoc_linux_x86_64",

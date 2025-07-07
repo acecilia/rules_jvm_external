@@ -33,12 +33,28 @@ class MavenCoordinates {
       classifier = mapPackingToClassifier(artifact.getExtension());
     }
 
+    // Handle SNAPSHOT resolution: extract timestamp from resolved version
+    String version = artifact.getVersion();
+    String baseVersion = artifact.getBaseVersion();
+    String versionRevision = null;
+    
+    // For SNAPSHOTs, if the resolved version differs from base version, 
+    // use the resolved version as versionRevision and base version as version
+    if (baseVersion != null && baseVersion.endsWith("-SNAPSHOT") && 
+        version != null && !version.equals(baseVersion)) {
+      versionRevision = version;
+      version = baseVersion;
+      System.out.println("DEBUG: SNAPSHOT detected - baseVersion: " + baseVersion + 
+                        ", resolvedVersion: " + versionRevision);
+    }
+
     return new Coordinates(
         artifact.getGroupId(),
         artifact.getArtifactId(),
         mapPackagingToExtension(artifact.getExtension()),
         classifier,
-        artifact.getVersion());
+        version,
+        versionRevision);
   }
 
   private static String construct(

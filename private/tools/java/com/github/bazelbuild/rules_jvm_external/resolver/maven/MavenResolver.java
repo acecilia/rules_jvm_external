@@ -142,6 +142,12 @@ public class MavenResolver implements Resolver {
         request.getRepositories().stream()
             .map(remoteRepositoryFactory::createFor)
             .collect(Collectors.toList());
+    
+    // Debug repository configuration
+    System.out.println("DEBUG: Configured repositories:");
+    for (RemoteRepository repo : repos) {
+      System.out.println("  - " + repo.getId() + ": " + repo.getUrl());
+    }
 
     List<Dependency> boms =
         request.getBoms().stream().map(this::createBom).collect(Collectors.toList());
@@ -521,6 +527,12 @@ public class MavenResolver implements Resolver {
 
                   Artifact artifact = amendArtifact(actualNode.getArtifact());
                   Coordinates from = MavenCoordinates.asCoordinates(artifact);
+                  
+                  // Debug SNAPSHOT resolution
+                  if (from.getVersionRevision() != null) {
+                    System.out.println("DEBUG: SNAPSHOT resolved - " + from + " with versionRevision: " + from.getVersionRevision());
+                  }
+                  
                   Coordinates remapped = remappings.getOrDefault(from, from);
                   dependencyGraph.addNode(remapped);
 
@@ -529,7 +541,13 @@ public class MavenResolver implements Resolver {
                       .map(DependencyNode::getArtifact)
                       .map(this::amendArtifact)
                       .map(MavenCoordinates::asCoordinates)
-                      .map(c -> remappings.getOrDefault(c, c))
+                      .map(c -> {
+                        // Debug SNAPSHOT resolution for child dependencies
+                        if (c.getVersionRevision() != null) {
+                          System.out.println("DEBUG: Child SNAPSHOT resolved - " + c + " with versionRevision: " + c.getVersionRevision());
+                        }
+                        return remappings.getOrDefault(c, c);
+                      })
                       .forEach(
                           to -> {
                             dependencyGraph.addNode(to);

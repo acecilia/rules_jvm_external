@@ -84,22 +84,31 @@ class RemoteRepositoryFactory {
   public RemoteRepository createFor(URI uri) {
     Objects.requireNonNull(uri, "Repository");
 
+    // Handle GCS repositories by converting gcs:// URLs to https://
+    URI actualUri = convertGcsToHttps(uri);
+    
     RemoteRepository.Builder repo =
-        new RemoteRepository.Builder(uri.toString(), "default", uri.toString());
-    repo.setSnapshotPolicy(new RepositoryPolicy(false, UPDATE_POLICY_DAILY, CHECKSUM_POLICY_WARN));
+        new RemoteRepository.Builder(actualUri.toString(), "default", actualUri.toString());
+    repo.setSnapshotPolicy(new RepositoryPolicy(true, UPDATE_POLICY_DAILY, CHECKSUM_POLICY_WARN)); // Enable snapshots for GCS
     repo.setReleasePolicy(new RepositoryPolicy(true, UPDATE_POLICY_DAILY, CHECKSUM_POLICY_WARN));
 
-    amendWithNetrcCredentials(uri, repo);
+    // Add GCS authentication if this is a GCS repository
+    if (isGcsRepository(uri)) {
+      amendWithGcsAuthentication(actualUri, repo);
+    } else {
+      // Only use netrc credentials for non-GCS repositories
+      amendWithNetrcCredentials(actualUri, repo);
+    }
 
     // If there's a mapping to the repository in the settings, attempt to grab authentication
     // credentials
-    String serverId = getServerId(uri);
+    String serverId = getServerId(actualUri);
     Server server = null;
     if (serverId != null) {
       server = settings.getServer(serverId);
     }
     if (server != null) {
-      amendWithDecryptedData(uri, repo, server);
+      amendWithDecryptedData(actualUri, repo, server);
     }
 
     return repo.build();
@@ -108,11 +117,15 @@ class RemoteRepositoryFactory {
   private void amendWithNetrcCredentials(URI serverUri, RemoteRepository.Builder repo) {
     Netrc.Credential credentials = netrc.getCredential(serverUri.getHost());
     if (credentials != null) {
+      System.out.println("DEBUG: Found netrc credentials for host: " + serverUri.getHost());
       addAuthentication(repo, credentials);
     } else {
       credentials = netrc.defaultCredential();
       if (credentials != null) {
+        System.out.println("DEBUG: Using default netrc credentials for host: " + serverUri.getHost());
         addAuthentication(repo, credentials);
+      } else {
+        System.out.println("DEBUG: No netrc credentials found for host: " + serverUri.getHost());
       }
     }
   }
@@ -161,6 +174,56 @@ class RemoteRepositoryFactory {
             .addPassword(credential.password())
             .build();
     repo.setAuthentication(authentication);
+  }
+
+  private URI convertGcsToHttps(URI uri) {
+    if (uri.getScheme() != null && uri.getScheme().equals("gcs")) {
+      // Convert gcs://bucket/path to https://storage.googleapis.com/bucket/path
+      String bucket = uri.getHost();
+      String path = uri.getPath();
+      if (path == null || path.isEmpty()) {
+        path = "/";
+      }
+      try {
+        return URI.create("https://storage.googleapis.com/" + bucket + path);
+      } catch (Exception e) {
+        throw new RuntimeException("Failed to convert GCS URI: " + uri, e);
+      }
+    }
+    return uri;
+  }
+
+  private boolean isGcsRepository(URI uri) {
+    return uri.getScheme() != null && uri.getScheme().equals("gcs");
+  }
+
+  private void amendWithGcsAuthentication(URI actualUri, RemoteRepository.Builder repo) {
+    // For GCS repositories, use Bearer token authentication
+    // First try to get token from environment variable
+    String token = System.getenv("GOOGLE_APPLICATION_CREDENTIALS_TOKEN");
+    
+    if (token == null) {
+      // Try to get token from netrc credentials for storage.googleapis.com
+      Netrc.Credential credentials = netrc.getCredential("storage.googleapis.com");
+      if (credentials != null) {
+        // In netrc, the password field contains the Bearer token for GCS
+        token = credentials.password();
+      }
+    }
+    
+    if (token != null) {
+      // Try using standard username/password authentication
+      // Some HTTP transports might recognize "Bearer" as username and format correctly
+      Authentication authentication =
+          new AuthenticationBuilder()
+              .addUsername("Bearer")
+              .addPassword(token)
+              .build();
+      repo.setAuthentication(authentication);
+      System.out.println("DEBUG: Added Bearer token as username/password authentication for " + actualUri + " with token: " + token.substring(0, 20) + "...");
+    } else {
+      System.out.println("DEBUG: No Bearer token found for GCS authentication");
+    }
   }
 
   private String getServerId(URI uri) {
