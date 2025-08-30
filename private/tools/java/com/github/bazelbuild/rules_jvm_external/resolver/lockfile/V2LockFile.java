@@ -17,6 +17,7 @@ package com.github.bazelbuild.rules_jvm_external.resolver.lockfile;
 import static com.google.common.base.StandardSystemProperty.USER_HOME;
 
 import com.github.bazelbuild.rules_jvm_external.Coordinates;
+import com.google.common.base.Strings;
 import com.github.bazelbuild.rules_jvm_external.resolver.Conflict;
 import com.github.bazelbuild.rules_jvm_external.resolver.DependencyInfo;
 import com.google.gson.Gson;
@@ -215,7 +216,11 @@ public class V2LockFile {
 
           Map<String, Object> artifactValue =
               artifacts.computeIfAbsent(shortKey, k -> new TreeMap<>());
-          artifactValue.put("version", coords.getVersion());
+          artifactValue.put(
+            "version", 
+            Strings.isNullOrEmpty(coords.getVersionRevision()) ? coords.getVersion() : coords.getVersionRevision()
+          );
+
 
           String classifier;
           if (coords.getClassifier() == null || coords.getClassifier().isEmpty()) {
@@ -226,7 +231,15 @@ public class V2LockFile {
           @SuppressWarnings("unchecked")
           Map<String, String> shasums =
               (Map<String, String>) artifactValue.computeIfAbsent("shasums", k -> new TreeMap<>());
-          info.getSha256().ifPresent(sha -> shasums.put(classifier, sha));
+          
+          // For non-versioned snapshots, their content can change any moment, so we need to avoid storing the SHA256 
+          boolean isNonVersionedSnapshot = coords.getVersion().endsWith("-SNAPSHOT") && coords.getVersionRevision() == null;
+          if (isNonVersionedSnapshot) {
+            // Classifier indicates the files associated to the dependency: store it even if the sha is not present
+            shasums.put(classifier, null);
+          } else {
+            info.getSha256().ifPresent(sha -> shasums.put(classifier, sha));
+          }
 
           info.getRepositories()
               .forEach(
