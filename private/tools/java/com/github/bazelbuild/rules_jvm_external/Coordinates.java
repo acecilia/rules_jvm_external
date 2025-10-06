@@ -15,16 +15,22 @@
 package com.github.bazelbuild.rules_jvm_external;
 
 import java.util.Objects;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Represents a Maven coordinate using Maven's standard schema of
  * <groupId>:<artifactId>[:<extension>[:<classifier>][:<version>].
  */
 public class Coordinates implements Comparable<Coordinates> {
+  // Maven snapshot timestamp pattern: yyyyMMdd.HHmmss-buildNumber
+  // Example: 20250930.222312-91
+  private static final Pattern SNAPSHOT_TIMESTAMP_PATTERN =
+      Pattern.compile("-(\\d{8}\\.\\d{6}-\\d+)$");
+
   private final String groupId;
   private final String artifactId;
   private final String version;
-  private final String versionRevision;
   private final String classifier;
   private final String extension;
 
@@ -60,23 +66,16 @@ public class Coordinates implements Comparable<Coordinates> {
       classifier = "jar".equals(parts[3]) ? "" : parts[3];
       version = parts[4];
     }
-    this.versionRevision = null;
   }
 
   public Coordinates(
       String groupId, String artifactId, String extension, String classifier, String version) {
-    this(groupId, artifactId, extension, classifier, version, null);
-  }
-
-  public Coordinates(
-      String groupId, String artifactId, String extension, String classifier, String version, String versionRevision) {
     this.groupId = Objects.requireNonNull(groupId, "Group ID");
     this.artifactId = Objects.requireNonNull(artifactId, "Artifact ID");
     this.extension = extension == null || extension.isEmpty() ? "jar" : extension;
     this.classifier =
         classifier == null || classifier.isEmpty() || "jar".equals(classifier) ? "" : classifier;
     this.version = version == null || version.isEmpty() ? "" : version;
-    this.versionRevision = versionRevision;
   }
 
   public String getGroupId() {
@@ -96,27 +95,19 @@ public class Coordinates implements Comparable<Coordinates> {
   }
 
   public Coordinates setClassifier(String classifier) {
-    return new Coordinates(getGroupId(), getArtifactId(), getExtension(), classifier, getVersion(), getVersionRevision());
+    return new Coordinates(getGroupId(), getArtifactId(), getExtension(), classifier, getVersion());
   }
 
   public Coordinates setExtension(String extension) {
-    return new Coordinates(getGroupId(), getArtifactId(), extension, getClassifier(), getVersion(), getVersionRevision());
+    return new Coordinates(getGroupId(), getArtifactId(), extension, getClassifier(), getVersion());
   }
 
   public Coordinates setVersion(String version) {
-    return new Coordinates(getGroupId(), getArtifactId(), getExtension(), getClassifier(), version, getVersionRevision());
-  }
-
-  public Coordinates setVersionRevision(String versionRevision) {
-    return new Coordinates(getGroupId(), getArtifactId(), getExtension(), getClassifier(), getVersion(), versionRevision);
+    return new Coordinates(getGroupId(), getArtifactId(), getExtension(), getClassifier(), version);
   }
 
   public String getExtension() {
     return extension;
-  }
-
-  public String getVersionRevision() {
-    return versionRevision;
   }
 
   public String asKey() {
@@ -141,15 +132,22 @@ public class Coordinates implements Comparable<Coordinates> {
 
   public String toRepoPath() {
     StringBuilder path = new StringBuilder();
+
+    // For timestamped snapshots, use -SNAPSHOT in directory path but timestamped version in filename
+    // Example: com/google/guava/guava/999.0.0-HEAD-jre-SNAPSHOT/guava-999.0.0-HEAD-jre-20250930.222312-91.jar
+    String directoryVersion = hasSnapshotTimestamp(getVersion())
+        ? snapshotTimestampToBaseVersion(getVersion())
+        : getVersion();
+
     path.append(getGroupId().replace('.', '/'))
         .append("/")
         .append(getArtifactId())
         .append("/")
-        .append(getVersion())
+        .append(directoryVersion)
         .append("/")
         .append(getArtifactId())
         .append("-")
-        .append(isNullOrEmpty(getVersionRevision()) ? getVersion() : getVersionRevision());
+        .append(getVersion());
 
     String classifier = getClassifier();
 
@@ -194,7 +192,6 @@ public class Coordinates implements Comparable<Coordinates> {
     return getGroupId().equals(that.getGroupId())
         && getArtifactId().equals(that.getArtifactId())
         && Objects.equals(getVersion(), that.getVersion())
-        && Objects.equals(getVersionRevision(), that.getVersionRevision())
         && Objects.equals(getClassifier(), that.getClassifier())
         && Objects.equals(getExtension(), that.getExtension());
   }
@@ -202,10 +199,39 @@ public class Coordinates implements Comparable<Coordinates> {
   @Override
   public int hashCode() {
     return Objects.hash(
-        getGroupId(), getArtifactId(), getVersion(), getVersionRevision(), getClassifier(), getExtension());
+        getGroupId(), getArtifactId(), getVersion(), getClassifier(), getExtension());
   }
 
   private boolean isNullOrEmpty(String value) {
     return value == null || value.isEmpty();
+  }
+
+  /**
+   * Checks if a version string contains a Maven snapshot timestamp.
+   * @param version the version string to check
+   * @return true if the version contains a timestamp pattern (yyyyMMdd.HHmmss-buildNumber)
+   */
+  private static boolean hasSnapshotTimestamp(String version) {
+    if (version == null) {
+      return false;
+    }
+    return SNAPSHOT_TIMESTAMP_PATTERN.matcher(version).find();
+  }
+
+  /**
+   * Converts a timestamped snapshot version to use -SNAPSHOT suffix.
+   * Example: "999.0.0-HEAD-jre-20250930.222312-91" -> "999.0.0-HEAD-jre-SNAPSHOT"
+   * @param version the version string with timestamp
+   * @return the version with -SNAPSHOT suffix, or original if no timestamp found
+   */
+  private static String snapshotTimestampToBaseVersion(String version) {
+    if (version == null) {
+      return version;
+    }
+    Matcher matcher = SNAPSHOT_TIMESTAMP_PATTERN.matcher(version);
+    if (matcher.find()) {
+      return matcher.replaceFirst("-SNAPSHOT");
+    }
+    return version;
   }
 }

@@ -268,12 +268,14 @@ public class GradleDependencyModelBuilder implements ToolingModelBuilder {
       info = new GradleResolvedDependencyImpl();
       info.setGroup(component.getModuleVersion().getGroup());
       info.setName(component.getModuleVersion().getName());
-      info.setVersion(component.getModuleVersion().getVersion());
 
-      // For versioned snapshot dependencies, extract the timestamped version
+      // For versioned snapshot dependencies, store the timestamped version
+      // Otherwise, store the version as-is
       if (GradleSnapshotUtil.isVersionedSnapshot(component)) {
         String snapshotId = GradleSnapshotUtil.extractSnapshotId(component);
-        info.setVersionRevision(snapshotId);
+        info.setVersion(snapshotId);
+      } else {
+        info.setVersion(component.getModuleVersion().getVersion());
       }
     }
 

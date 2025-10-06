@@ -47,12 +47,67 @@ def _compute_lock_file_hash(lock_file_contents):
         to_hash.update({key: json.decode(json.encode(value))})
     return hash(repr(to_hash))
 
+def _has_snapshot_timestamp(version):
+    """Check if version contains a Maven snapshot timestamp pattern.
+
+    Pattern: -yyyyMMdd.HHmmss-buildNumber at the end
+    Example: -20250930.222312-91
+    """
+    if not version or len(version) < 20:
+        return False
+    # Check for pattern: -NNNNNNNN.NNNNNN-N+ at end
+    # Find last dash
+    parts = version.rsplit("-", 1)
+    if len(parts) != 2:
+        return False
+    last_part = parts[1]
+    # Check if last part matches buildNumber (digits)
+    if not last_part or not last_part.isdigit():
+        return False
+    # Now check the part before for -NNNNNNNN.NNNNNN
+    remaining = parts[0]
+    parts2 = remaining.rsplit("-", 1)
+    if len(parts2) != 2:
+        return False
+    timestamp = parts2[1]
+    # Check format: NNNNNNNN.NNNNNN (8 digits, dot, 6 digits)
+    if len(timestamp) != 15 or timestamp[8] != ".":
+        return False
+    date_part = timestamp[:8]
+    time_part = timestamp[9:]
+    return date_part.isdigit() and time_part.isdigit()
+
+def _snapshot_timestamp_to_base_version(version):
+    """Convert timestamped snapshot version to -SNAPSHOT suffix.
+
+    Example: "999.0.0-HEAD-jre-20250930.222312-91" -> "999.0.0-HEAD-jre-SNAPSHOT"
+    """
+    if not _has_snapshot_timestamp(version):
+        return version
+
+    # Find the timestamp pattern and replace with SNAPSHOT
+    # Pattern is: -yyyyMMdd.HHmmss-buildNumber
+    # We need to find the second-to-last dash (before timestamp)
+    parts = version.rsplit("-", 2)
+    if len(parts) == 3:
+        # parts[0] is everything before timestamp
+        # parts[1] is the timestamp (yyyyMMdd.HHmmss)
+        # parts[2] is the build number
+        return parts[0] + "-SNAPSHOT"
+    return version
+
 def _to_m2_path(unpacked):
-    path = "{group}/{artifact}/{version}/{artifact}-{version_revision}".format(
+    version = unpacked["version"]
+
+    # For timestamped snapshots, use -SNAPSHOT in directory but timestamped version in filename
+    # Example: com/google/guava/guava/999.0.0-HEAD-jre-SNAPSHOT/guava-999.0.0-HEAD-jre-20250930.222312-91.jar
+    directory_version = _snapshot_timestamp_to_base_version(version)
+
+    path = "{group}/{artifact}/{directory_version}/{artifact}-{version}".format(
         artifact = unpacked["artifact"],
         group = unpacked["group"].replace(".", "/"),
-        version = unpacked["version"],
-        version_revision = unpacked.get("version_revision") or unpacked["version"]
+        directory_version = directory_version,
+        version = version,
     )
 
     classifier = unpacked.get("classifier", "jar")
@@ -139,7 +194,6 @@ def _get_artifacts(lock_file_contents):
             "group": parts[0],
             "artifact": parts[1],
             "version": data["version"],
-            "version_revision": data.get("version_revision"),
         }
         if len(parts) > 2:
             root_unpacked["packaging"] = parts[2]
