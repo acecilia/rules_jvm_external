@@ -216,11 +216,6 @@ public class V2LockFile {
           Map<String, Object> artifactValue =
               artifacts.computeIfAbsent(shortKey, k -> new TreeMap<>());
           artifactValue.put("version", coords.getVersion());
-          
-          // Add version_revision for reproducible builds when available
-          if (coords.getVersionRevision() != null && !coords.getVersionRevision().isEmpty()) {
-            artifactValue.put("version_revision", coords.getVersionRevision());
-          }
 
           String classifier;
           if (coords.getClassifier() == null || coords.getClassifier().isEmpty()) {
@@ -231,9 +226,12 @@ public class V2LockFile {
           @SuppressWarnings("unchecked")
           Map<String, String> shasums =
               (Map<String, String>) artifactValue.computeIfAbsent("shasums", k -> new TreeMap<>());
-          
-          // For non-versioned snapshots, their content can change any moment, so we need to avoid storing the SHA256 
-          boolean isNonVersionedSnapshot = coords.getVersion().endsWith("-SNAPSHOT") && coords.getVersionRevision() == null;
+
+          // For non-versioned snapshots (those without timestamps), their content can change any moment,
+          // so we need to avoid storing the SHA256
+          // Pattern: ends with -SNAPSHOT but does NOT contain timestamp (yyyyMMdd.HHmmss-buildNumber)
+          boolean isNonVersionedSnapshot = coords.getVersion().endsWith("-SNAPSHOT")
+              && !coords.getVersion().matches(".*\\d{8}\\.\\d{6}-\\d+.*");
           if (isNonVersionedSnapshot) {
             // Classifier indicates the files associated to the dependency: store it even if the sha is not present
             shasums.put(classifier, null);

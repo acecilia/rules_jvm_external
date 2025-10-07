@@ -151,7 +151,7 @@ public class GradleResolver implements Resolver {
       GradleDependencyModel resolved,
       List<GradleDependency> boms)
       throws IOException {
-    MutableGraph<Coordinates> graph = GraphBuilder.directed().allowsSelfLoops(false).build();
+    MutableGraph<Coordinates> graph = GraphBuilder.directed().allowsSelfLoops(true).build();
 
     Set<Conflict> conflicts = new HashSet<>();
     List<GradleResolvedDependency> implementationDependencies = resolved.getResolvedDependencies();
@@ -160,8 +160,8 @@ public class GradleResolver implements Resolver {
       return new ResolutionResult(graph, null);
     }
 
+  Set<Coordinates> visited = new HashSet<>();
     for (GradleResolvedDependency dependency : implementationDependencies) {
-      Set<Coordinates> visited = new HashSet<>();
       for (GradleResolvedArtifact artifact : dependency.getArtifacts()) {
         GradleCoordinates gradleCoordinates =
             new GradleCoordinatesImpl(
@@ -181,8 +181,7 @@ public class GradleResolver implements Resolver {
                 gradleCoordinates.getArtifactId(),
                 extension,
                 classifier,
-                gradleCoordinates.getVersion(),
-                dependency.getVersionRevision());
+                gradleCoordinates.getVersion());
         addDependency(graph, coordinates, dependency, conflicts, requestedDeps, visited);
         // if there's a conflict and the conflicting version isn't one that's actually requested
         // then it's an actual conflict we want to report
@@ -276,8 +275,7 @@ public class GradleResolver implements Resolver {
                   childCoordinates.getArtifactId(),
                   extension,
                   childCoordinates.getClassifier(),
-                  childCoordinates.getVersion(),
-                  childInfo.getVersionRevision());
+                  childCoordinates.getVersion());
           graph.addNode(child);
           graph.putEdge(parent, child);
           // if there's a conflict and the conflicting version isn't one that's actually requested
